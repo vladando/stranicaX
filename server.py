@@ -19,44 +19,68 @@ def save_submission(data):
 
 def build_deepsite_prompt(data):
     services = "\n".join(
-        [f"- {s['name']} ({s['price']}): {s['description']}" for s in data.get('services', [])]
+        [f"- {s['service-title']} ({s.get('service-price', 'Nije navedena cena')}): {s['service-description']}" 
+         for s in data.get('services', [])]
     )
     team = "\n".join(
-        [f"- {m['name']} — {m['position']}: {m['bio']}" for m in data.get('teamMembers', [])]
+        [f"- {m['team-name']} — {m['team-position']}: {m.get('team-bio', 'Nije navedena biografija')}" 
+         for m in data.get('teamMembers', [])]
     )
+    portfolio = "\n".join(
+        [f"- {p['project-name']}: {p.get('project-description', 'Nije naveden opis')}" 
+         for p in data.get('portfolio', [])]
+    )
+    social_media = "\n".join(
+        [f"{key.capitalize()}: {value}" for key, value in {
+            'facebook': data.get('facebook', ''),
+            'twitter': data.get('twitter', ''),
+            'instagram': data.get('instagram', ''),
+            'linkedin': data.get('linkedin', '')
+        }.items() if value]
+    )
+
     prompt = f"""
-Napravi modernu i profesionalnu web stranicu koristeći :contentReference[oaicite:2]{index=2} za sljedeću firmu:
+Napravi modernu i profesionalnu veb stranicu za sledeću firmu:
 
-Naziv: {data.get('companyName')}
-Slogan: {data.get('slogan')}
-Opis: {data.get('companyDescription')}
-Djelatnost: {data.get('industry')}
-Godina osnivanja: {data.get('yearFounded')}
-Broj zaposlenih: {data.get('employees')}
-Email: {data.get('email')}
-Telefon: {data.get('phone')}
-Facebook: {data.get('facebook')}
-Instagram: {data.get('instagram')}
-LinkedIn: {data.get('linkedin')}
+Naziv firme: {data.get('company-name', 'Nije navedeno')}
+Slogan: {data.get('slogan', 'Nije navedeno')}
+Opis: {data.get('description', 'Nije navedeno')}
+Delatnost: {data.get('industry', 'Nije navedeno')}
+Godina osnivanja: {data.get('year-founded', 'Nije navedeno')}
+Broj zaposlenih: {data.get('num-employees', 'Nije navedeno')}
+Kontakt:
+- Email: {data.get('email', 'Nije navedeno')}
+- Telefon: {data.get('phone', 'Nije navedeno')}
+- Adresa: {data.get('address', 'Nije navedena')}
+Društvene mreže:
+{social_media if social_media else 'Nije navedeno'}
+Radno vreme: {data.get('working-hours', 'Nije navedeno')}
+Lokacija na mapi: {data.get('map-embed', 'Nije navedeno')}
 
-Usluge:
-{services}
+Usluge/Proizvodi:
+{services if services else 'Nije navedeno'}
+
+Portfolio:
+{portfolio if portfolio else 'Nije navedeno'}
 
 Tim:
-{team}
+{team if team else 'Nije navedeno'}
 
-Glavna boja: {data.get('primaryColor')}
-Sekundarna boja: {data.get('secondaryColor')}
-Stil dizajna: {data.get('style')}
-Font: {data.get('font')}
-Jezik sajta: {data.get('language')}
-Stranice: {', '.join(data.get('pages', []))}
+Kultura firme: {data.get('culture', 'Nije navedeno')}
 
-Logo: {data.get('logo')}
-Slike: {', '.join(data.get('images', []))}
-Slike članova tima: {', '.join(data.get('memberPhotos', []))}
+Vizuelni identitet:
+- Logo: {data.get('logo-url', 'Nije navedeno')}
+- Glavna boja: {data.get('primary-color', 'Nije navedeno')}
+- Sekundarna boja: {data.get('secondary-color', 'Nije navedeno')}
+- Stil dizajna: {data.get('style', 'Nije navedeno')}
+- Font: {data.get('font', 'Nije navedeno')}
+- Dodatne slike: {', '.join(data.get('additional-images', [])) if data.get('additional-images') else 'Nije navedeno'}
 
-Dodatne napomene: {data.get('notes')}
+Stranice sajta: {', '.join(data.get('pages', [])) if data.get('pages') else 'Nije navedeno'}
+Jezik sajta: {data.get('language', 'Nije navedeno')}
+Registracija domena: {data.get('domain', 'Ne')} ({data.get('domain-address', 'Nije navedeno')})
+Hosting: {data.get('hosting', 'Ne')}
+Dodatne napomene: {data.get('notes', 'Nije navedeno')}
 """
     return prompt.strip()
 
@@ -65,10 +89,13 @@ def receive_form():
     data = request.json
     print("Primljeni podaci:", data)
 
-    # snimi podatke u fajl
+    # Snimi podatke u fajl
     save_submission(data)
 
-    # napravi prompt
+    # Napravi prompt
     prompt = build_deepsite_prompt(data)
 
     return jsonify({"status": "success", "prompt": prompt})
+
+if __name__ == '__main__':
+    app.run(debug=True)
