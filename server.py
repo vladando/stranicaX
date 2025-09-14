@@ -1,11 +1,14 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json, os
+from huggingface_hub import create_repo, upload_file
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app, resources={r"/submit-form": {"origins": "https://enzostvs-deepsite.hf.space"}})
 
 DATA_FILE = 'submissions.json'
+HF_TOKEN = os.environ.get('HF_TOKEN')  # Postavi Hugging Face token u Render environment varijablama
 
 def save_submission(data):
     if os.path.exists(DATA_FILE):
@@ -18,13 +21,12 @@ def save_submission(data):
         json.dump(all_data, f, ensure_ascii=False, indent=2)
 
 def build_deepsite_prompt(data):
-    # Validacija obaveznih polja
+    print("DEBUG: Počinje generisanje prompta")
     required_fields = ['companyName', 'email']
     missing_fields = [field for field in required_fields if not data.get(field)]
     if missing_fields:
         raise ValueError(f"Nedostaju obavezna polja: {', '.join(missing_fields)}")
 
-    # Definisanje dozvoljenih polja za JSON
     allowed_fields = [
         'companyName', 'slogan', 'generateSlogan', 'companyDescription', 'industry', 
         'yearFounded', 'employees', 'email', 'phone', 'facebook', 'instagram', 'linkedin', 
@@ -32,7 +34,6 @@ def build_deepsite_prompt(data):
         'style', 'font', 'pages', 'language', 'hasDomain', 'domain', 'hasHosting', 
         'notes', 'logo', 'images', 'memberPhotos'
     ]
-    # Filtriranje samo dozvoljenih polja
     filtered_data = {k: data.get(k) for k in allowed_fields if k in data}
 
     services = "\n".join(
@@ -101,11 +102,47 @@ Dodatne napomene: {filtered_data.get('notes', 'Nije navedeno')}
 """
     return prompt.strip()
 
+def create_deepsite_project(prompt, company_name):
+    try:
+        # Generiši jedinstveni repo ID (npr. enzostvs/unimatika-20250915)
+        repo_id = f"enzostvs/{company_name.lower().replace(' ', '-')}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        print(f"DEBUG: Kreiram Hugging Face Space sa ID: {repo_id}")
+
+        # Kreiraj novi Space
+        create_repo(
+            repo_id=repo_id,
+            token=HF_TOKEN,
+            repo_type="space",
+            space_sdk="gradio",  # Pretpostavljamo da DeepSite koristi Gradio
+            private=True  # Space je privatan dok ga ne odobriš
+        )
+
+        # Snimi prompt kao prompt.txt u repozitorijumu
+        with open("prompt.txt", "w", encoding="utf-8") as f:
+            f.write(prompt)
+        upload_file(
+            path_or_fileobj="prompt.txt",
+            path_in_repo="prompt.txt",
+            repo_id=repo_id,
+            repo_type="space",
+            token=HF_TOKEN
+        )
+        os.remove("prompt.txt")  # Obriši privremeni fajl
+
+        # Vrati URL Space-a
+        space_url = f"https://huggingface.co/spaces/{repo_id}"
+        print(f"DEBUG: Space kreiran na {space_url}")
+        return space_url
+    except Exception as e:
+        print(f"DEBUG: Greška pri kreiranju Space-a: {str(e)}")
+        raise
+
 @app.route('/submit-form', methods=['POST'])
 def receive_form():
+    print("DEBUG: Primljen zahtev na /submit-form sa metodom:", request.method)
     try:
         data = request.json
-        print("Primljeni podaci:", data)
+        print("DEBUG: Primljeni podaci:", data)
 
         # Snimi podatke u fajl
         save_submission(data)
@@ -113,10 +150,16 @@ def receive_form():
         # Napravi prompt
         prompt = build_deepsite_prompt(data)
 
-        return jsonify({"status": "success", "prompt": prompt})
+        # Kreiraj DeepSite projekat
+        space_url = create_deepsite_project(prompt, data['companyName'])
+
+        print("DEBUG: Generisan prompt i Space, uspešan odgovor")
+        return jsonify({"status": "success", "prompt": prompt, "space_url": space_url})
     except ValueError as e:
+        print("DEBUG: ValueError:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
+        print("DEBUG: Neočekivana greška:", str(e))
         return jsonify({"status": "error", "message": "Neočekivana greška na serveru"}), 500
 
 if __name__ == '__main__':
