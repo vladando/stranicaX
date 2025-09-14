@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import json, os
 
@@ -19,11 +19,11 @@ def save_submission(data):
 
 def build_deepsite_prompt(data):
     services = "\n".join(
-        [f"- {s['service-title']} ({s.get('service-price', 'Nije navedena cena')}): {s['service-description']}" 
+        [f"- {s['name']} ({s.get('price', 'Nije navedena cena')}): {s['description']}" 
          for s in data.get('services', [])]
     )
     team = "\n".join(
-        [f"- {m['team-name']} — {m['team-position']}: {m.get('team-bio', 'Nije navedena biografija')}" 
+        [f"- {m['name']} — {m['position']}: {m.get('bio', 'Nije navedena biografija')}" 
          for m in data.get('teamMembers', [])]
     )
     portfolio = "\n".join(
@@ -42,12 +42,12 @@ def build_deepsite_prompt(data):
     prompt = f"""
 Napravi modernu i profesionalnu veb stranicu za sledeću firmu:
 
-Naziv firme: {data.get('company-name', 'Nije navedeno')}
+Naziv firme: {data.get('companyName', 'Nije navedeno')}
 Slogan: {data.get('slogan', 'Nije navedeno')}
-Opis: {data.get('description', 'Nije navedeno')}
+Opis: {data.get('companyDescription', 'Nije navedeno')}
 Delatnost: {data.get('industry', 'Nije navedeno')}
-Godina osnivanja: {data.get('year-founded', 'Nije navedeno')}
-Broj zaposlenih: {data.get('num-employees', 'Nije navedeno')}
+Godina osnivanja: {data.get('yearFounded', 'Nije navedeno')}
+Broj zaposlenih: {data.get('employees', 'Nije navedeno')}
 Kontakt:
 - Email: {data.get('email', 'Nije navedeno')}
 - Telefon: {data.get('phone', 'Nije navedeno')}
@@ -69,20 +69,24 @@ Tim:
 Kultura firme: {data.get('culture', 'Nije navedeno')}
 
 Vizuelni identitet:
-- Logo: {data.get('logo-url', 'Nije navedeno')}
-- Glavna boja: {data.get('primary-color', 'Nije navedeno')}
-- Sekundarna boja: {data.get('secondary-color', 'Nije navedeno')}
+- Logo: {data.get('logo', 'Nije navedeno')}
+- Glavna boja: {data.get('primaryColor', 'Nije navedeno')}
+- Sekundarna boja: {data.get('secondaryColor', 'Nije navedeno')}
 - Stil dizajna: {data.get('style', 'Nije navedeno')}
 - Font: {data.get('font', 'Nije navedeno')}
-- Dodatne slike: {', '.join(data.get('additional-images', [])) if data.get('additional-images') else 'Nije navedeno'}
+- Dodatne slike: {', '.join(data.get('images', [])) if data.get('images') else 'Nije navedeno'}
 
 Stranice sajta: {', '.join(data.get('pages', [])) if data.get('pages') else 'Nije navedeno'}
 Jezik sajta: {data.get('language', 'Nije navedeno')}
-Registracija domena: {data.get('domain', 'Ne')} ({data.get('domain-address', 'Nije navedeno')})
-Hosting: {data.get('hosting', 'Ne')}
+Registracija domena: {data.get('hasDomain', 'Ne')} ({data.get('domain', 'Nije navedeno')})
+Hosting: {data.get('hasHosting', 'Ne')}
 Dodatne napomene: {data.get('notes', 'Nije navedeno')}
 """
     return prompt.strip()
+
+@app.route('/', methods=['GET'])
+def serve_index():
+    return send_file('index.html')
 
 @app.route('/submit-form', methods=['POST'])
 def receive_form():
