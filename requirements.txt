@@ -1,9 +1,1 @@
-flask==3.0.3
-flask-cors==4.0.0
-gunicorn==21.2.0
-huggingface_hub==0.24.6
-requests==2.32.3
-tqdm==4.66.5
-pyyaml==6.0.2
-tokenizers==0.20.1
-safetensors==0.4.5
+-e "flask==3.0.3\nflask-cors==4.0.0\ngunicorn==21.2.0" 
