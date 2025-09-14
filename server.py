@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import json, os
+import json
+import os
+import uuid
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app, resources={r"/submit-form": {"origins": "https://enzostvs-deepsite.hf.space"}})
@@ -18,12 +21,32 @@ def save_submission(data):
             all_data = json.load(f)
     else:
         all_data = []
-    all_data.append(data)
+    # Dodaj jedinstveni ID, timestamp i status processed
+    submission = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.utcnow().isoformat(),
+        "data": data,
+        "processed": False
+    }
+    all_data.append(submission)
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(all_data, f, ensure_ascii=False, indent=2)
+    return submission["id"]
+
+def mark_submission_processed(submission_id):
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        for submission in all_data:
+            if submission["id"] == submission_id:
+                submission["processed"] = True
+                break
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(all_data, f, ensure_ascii=False, indent=2)
+        return True
+    return False
 
 def save_prompt_to_txt(company_name, prompt):
-    # Kreiraj sigurno ime fajla
     safe_company_name = company_name.lower().replace(' ', '-').replace('/', '-').replace('\\', '-')
     file_name = f"{PROMPT_DIR}/{safe_company_name}-prompt.txt"
     with open(file_name, 'w', encoding='utf-8') as f:
@@ -31,13 +54,11 @@ def save_prompt_to_txt(company_name, prompt):
     return file_name
 
 def build_deepsite_prompt(data):
-    # Validacija obaveznih polja
     required_fields = ['companyName', 'email']
     missing_fields = [field for field in required_fields if not data.get(field)]
     if missing_fields:
         raise ValueError(f"Nedostaju obavezna polja: {', '.join(missing_fields)}")
 
-    # Definisanje dozvoljenih polja za JSON
     allowed_fields = [
         'companyName', 'slogan', 'generateSlogan', 'companyDescription', 'industry', 
         'yearFounded', 'employees', 'email', 'phone', 'facebook', 'instagram', 'linkedin', 
@@ -45,7 +66,6 @@ def build_deepsite_prompt(data):
         'style', 'font', 'pages', 'language', 'hasDomain', 'domain', 'hasHosting', 
         'notes', 'logo', 'images', 'memberPhotos'
     ]
-    # Filtriranje samo dozvoljenih polja
     filtered_data = {k: data.get(k) for k in allowed_fields if k in data}
 
     services = "\n".join(
@@ -120,8 +140,8 @@ def receive_form():
         data = request.json
         print("Primljeni podaci:", data)
 
-        # Snimi podatke u fajl
-        save_submission(data)
+        # Snimi podatke u fajl sa ID-om i statusom
+        submission_id = save_submission(data)
 
         # Napravi prompt
         prompt = build_deepsite_prompt(data)
@@ -132,7 +152,7 @@ def receive_form():
         # Kreiraj URL za preuzimanje fajla
         prompt_url = f"https://stranicax.onrender.com/download-prompt/{data['companyName'].lower().replace(' ', '-')}-prompt.txt"
 
-        return jsonify({"status": "success", "prompt": prompt, "prompt_file": prompt_file, "prompt_url": prompt_url})
+        return jsonify({"status": "success", "prompt": prompt, "prompt_file": prompt_file, "prompt_url": prompt_url, "submission_id": submission_id})
     except ValueError as e:
         print("Greška:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -146,6 +166,33 @@ def download_prompt(filename):
         return send_from_directory(PROMPT_DIR, filename, as_attachment=True)
     except FileNotFoundError:
         return jsonify({"status": "error", "message": "Fajl nije pronađen"}), 404
+
+@app.route('/get-new-submissions', methods=['GET'])
+def get_new_submissions():
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                all_data = json.load(f)
+            # Vraćaj samo neobrađene zahteve
+            new_submissions = [submission for submission in all_data if not submission.get("processed", False)]
+            return jsonify({"status": "success", "submissions": new_submissions})
+        else:
+            return jsonify({"status": "success", "submissions": []})
+    except Exception as e:
+        print("Greška:", str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/mark-processed/<submission_id>', methods=['POST'])
+def mark_processed(submission_id):
+    try:
+        success = mark_submission_processed(submission_id)
+        if success:
+            return jsonify({"status": "success", "message": f"Submission {submission_id} marked as processed"})
+        else:
+            return jsonify({"status": "error", "message": "Submission not found"}), 404
+    except Exception as e:
+        print("Greška:", str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
