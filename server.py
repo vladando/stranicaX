@@ -24,44 +24,55 @@ def build_deepsite_prompt(data):
     if missing_fields:
         raise ValueError(f"Nedostaju obavezna polja: {', '.join(missing_fields)}")
 
+    # Definisanje dozvoljenih polja za JSON
+    allowed_fields = [
+        'companyName', 'slogan', 'generateSlogan', 'companyDescription', 'industry', 
+        'yearFounded', 'employees', 'email', 'phone', 'facebook', 'instagram', 'linkedin', 
+        'services', 'generateImages', 'teamMembers', 'primaryColor', 'secondaryColor', 
+        'style', 'font', 'pages', 'language', 'hasDomain', 'domain', 'hasHosting', 
+        'notes', 'logo', 'images', 'memberPhotos'
+    ]
+    # Filtriranje samo dozvoljenih polja
+    filtered_data = {k: data.get(k) for k in allowed_fields if k in data}
+
     services = "\n".join(
         [f"- {s['name']} ({s.get('price', 'Nije navedena cena')}): {s['description']}" 
-         for s in data.get('services', [])]
+         for s in filtered_data.get('services', [])]
     )
     team = "\n".join(
         [f"- {m['name']} — {m['position']}: {m.get('bio', 'Nije navedena biografija')}" 
-         for m in data.get('teamMembers', [])]
+         for m in filtered_data.get('teamMembers', [])]
     )
     portfolio = "\n".join(
         [f"- {p['project-name']}: {p.get('project-description', 'Nije naveden opis')}" 
-         for p in data.get('portfolio', [])]
+         for p in filtered_data.get('portfolio', [])]
     )
     social_media = "\n".join(
         [f"{key.capitalize()}: {value}" for key, value in {
-            'facebook': data.get('facebook', ''),
-            'twitter': data.get('twitter', ''),
-            'instagram': data.get('instagram', ''),
-            'linkedin': data.get('linkedin', '')
+            'facebook': filtered_data.get('facebook', ''),
+            'twitter': filtered_data.get('twitter', ''),
+            'instagram': filtered_data.get('instagram', ''),
+            'linkedin': filtered_data.get('linkedin', '')
         }.items() if value]
     )
 
     prompt = f"""
 Napravi modernu i profesionalnu veb stranicu za sledeću firmu:
 
-Naziv firme: {data.get('companyName', 'Nije navedeno')}
-Slogan: {data.get('slogan', 'Nije navedeno')}
-Opis: {data.get('companyDescription', 'Nije navedeno')}
-Delatnost: {data.get('industry', 'Nije navedeno')}
-Godina osnivanja: {data.get('yearFounded', 'Nije navedeno')}
-Broj zaposlenih: {data.get('employees', 'Nije navedeno')}
+Naziv firme: {filtered_data.get('companyName', 'Nije navedeno')}
+Slogan: {filtered_data.get('slogan', 'Nije navedeno')}
+Opis: {filtered_data.get('companyDescription', 'Nije navedeno')}
+Delatnost: {filtered_data.get('industry', 'Nije navedeno')}
+Godina osnivanja: {filtered_data.get('yearFounded', 'Nije navedeno')}
+Broj zaposlenih: {filtered_data.get('employees', 'Nije navedeno')}
 Kontakt:
-- Email: {data.get('email', 'Nije navedeno')}
-- Telefon: {data.get('phone', 'Nije navedeno')}
-- Adresa: {data.get('address', 'Nije navedena')}
+- Email: {filtered_data.get('email', 'Nije navedeno')}
+- Telefon: {filtered_data.get('phone', 'Nije navedeno')}
+- Adresa: {filtered_data.get('address', 'Nije navedena')}
 Društvene mreže:
 {social_media if social_media else 'Nije navedeno'}
-Radno vreme: {data.get('working-hours', 'Nije navedeno')}
-Lokacija na mapi: {data.get('map-embed', 'Nije navedeno')}
+Radno vreme: {filtered_data.get('working-hours', 'Nije navedeno')}
+Lokacija na mapi: {filtered_data.get('map-embed', 'Nije navedeno')}
 
 Usluge/Proizvodi:
 {services if services else 'Nije navedeno'}
@@ -72,21 +83,21 @@ Portfolio:
 Tim:
 {team if team else 'Nije navedeno'}
 
-Kultura firme: {data.get('culture', 'Nije navedeno')}
+Kultura firme: {filtered_data.get('culture', 'Nije navedeno')}
 
 Vizuelni identitet:
-- Logo: {data.get('logo', 'Nije navedeno')}
-- Glavna boja: {data.get('primaryColor', 'Nije navedeno')}
-- Sekundarna boja: {data.get('secondaryColor', 'Nije navedeno')}
-- Stil dizajna: {data.get('style', 'Nije navedeno')}
-- Font: {data.get('font', 'Nije navedeno')}
-- Dodatne slike: {', '.join(data.get('images', [])) if data.get('images') else 'Nije navedeno'}
+- Logo: {filtered_data.get('logo', 'Nije navedeno')}
+- Glavna boja: {filtered_data.get('primaryColor', 'Nije navedeno')}
+- Sekundarna boja: {filtered_data.get('secondaryColor', 'Nije navedeno')}
+- Stil dizajna: {filtered_data.get('style', 'Nije navedeno')}
+- Font: {filtered_data.get('font', 'Nije navedeno')}
+- Dodatne slike: {', '.join(filtered_data.get('images', [])) if filtered_data.get('images') else 'Nije navedeno'}
 
-Stranice sajta: {', '.join(data.get('pages', [])) if data.get('pages') else 'Nije navedeno'}
-Jezik sajta: {data.get('language', 'Nije navedeno')}
-Registracija domena: {data.get('hasDomain', 'Ne')} ({data.get('domain', 'Nije navedeno')})
-Hosting: {data.get('hasHosting', 'Ne')}
-Dodatne napomene: {data.get('notes', 'Nije navedeno')}
+Stranice sajta: {', '.join(filtered_data.get('pages', [])) if filtered_data.get('pages') else 'Nije navedeno'}
+Jezik sajta: {filtered_data.get('language', 'Nije navedeno')}
+Registracija domena: {filtered_data.get('hasDomain', 'Ne')} ({filtered_data.get('domain', 'Nije navedeno')})
+Hosting: {filtered_data.get('hasHosting', 'Ne')}
+Dodatne napomene: {filtered_data.get('notes', 'Nije navedeno')}
 """
     return prompt.strip()
 
