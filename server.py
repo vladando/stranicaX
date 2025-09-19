@@ -61,6 +61,7 @@ def mark_submission_processed(submission_id, result_url=None):
 
 @app.route('/submit-form', methods=['POST'])
 def receive_form():
+    """Prima formu sa frontenda, kreira submission_id i čuva podatke."""
     try:
         data = request.json
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
@@ -86,7 +87,7 @@ def receive_form():
 
 @app.route('/get-new-submissions', methods=['GET'])
 def get_new_submissions():
-    """Vraća sve neobrađene zahtjeve."""
+    """Vraća sve neobrađene zahtjeve (koristi Selenium worker)."""
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
@@ -102,7 +103,7 @@ def get_new_submissions():
 
 @app.route('/mark-processed/<submission_id>', methods=['POST'])
 def mark_processed(submission_id):
-    """Poziva ga obrada kada završi sajt i doda link."""
+    """Poziva ga obrada kada završi sajt i dodaje link."""
     try:
         data = request.json or {}
         result_url = data.get("result_url")
