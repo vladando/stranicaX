@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import os
@@ -18,7 +18,7 @@ REQUESTS = {}   # memorijski brojač
 
 # --- SMTP konfiguracija ---
 SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix na VPS-u
-SMTP_PORT = 587                      # 587 za TLS (465 za SSL)
+SMTP_PORT = 587                      # 587 za TLS, 465 za SSL
 SMTP_USER = "kontakt@stranicax.com"  # mejl nalog koji si kreirao
 SMTP_PASS = "TVOJA_LOZINKA"          # lozinka tog naloga
 TARGET_EMAIL = "vlasnik@stranicax.com"  # gde vlasnik prima poruke sa sajta
