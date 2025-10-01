@@ -20,7 +20,7 @@ REQUESTS = {}   # memorijski brojač
 SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix na VPS-u
 SMTP_PORT = 587                      # 587 za TLS, 465 za SSL
 SMTP_USER = "kontakt@stranicax.com"  # mejl nalog koji si kreirao
-SMTP_PASS = "TVOJA_LOZINKA"          # lozinka tog naloga
+SMTP_PASS = "retriver"          # lozinka tog naloga
 TARGET_EMAIL = "vlasnik@stranicax.com"  # gde vlasnik prima poruke sa sajta
 
 
