@@ -21,17 +21,17 @@ PROMPT_DIR = 'prompts'
 RATE_LIMIT = 5
 REQUESTS = {}
 
-# --- SMTP CONFIG (možeš postaviti kroz env na Render-u) ---
+# --- SMTP CONFIG (postavi na Renderu u Environment Variables) ---
 SMTP_SERVER = os.getenv("SMTP_SERVER", "mail.stranicax.com")
-# Poredak pokušaja (587 STARTTLS → 465 SMTPS); možeš promeniti kroz env, npr. "465,587"
-SMTP_PORTS = [int(p.strip()) for p in os.getenv("SMTP_PORTS", "587,465").split(",") if p.strip()]
+# Redosled pokušaja (možeš postaviti SMTP_PORTS u Render env, npr. "2525,587,465")
+SMTP_PORTS = [int(p.strip()) for p in os.getenv("SMTP_PORTS", "2525,587,465").split(",") if p.strip()]
 SMTP_USER = os.getenv("SMTP_USER", "kontakt@stranicax.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "retriver")
-TARGET_EMAIL = os.getenv("TARGET_EMAIL", "vlasnik@stranicax.com")  # fallback ako ownerEmail nije poslat/ispravan
+SMTP_PASS = os.getenv("SMTP_PASS", "TVOJA_LOZINKA")
+TARGET_EMAIL = os.getenv("TARGET_EMAIL", "vlasnik@stranicax.com")  # fallback kad ownerEmail nije poslat/validan
 
-SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "12"))  # kratak da ne blokira workere
+SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "12"))
 SMTP_RETRIES = int(os.getenv("SMTP_RETRIES", "2"))
-RETRY_SLEEP = float(os.getenv("SMTP_RETRY_SLEEP", "1.0"))
+RETRY_SLEEP = float(os.getenv("SMTP_RETRY_SLEEP", "0.5"))
 
 EMAIL_WORKERS = int(os.getenv("EMAIL_WORKERS", "2"))
 
@@ -41,6 +41,7 @@ MAX_EMAIL_LEN = 320
 MAX_MSG_LEN = 8000
 
 EMAIL_JOBS = {}
+
 os.makedirs(PROMPT_DIR, exist_ok=True)
 executor = ThreadPoolExecutor(max_workers=EMAIL_WORKERS)
 
@@ -50,27 +51,25 @@ def safe_trim(s: str, n: int) -> str:
     return s if len(s) <= n else s[:n]
 
 
-def _send_via_587_starttls(msg):
-    """Pokušaj preko 587 sa STARTTLS."""
-    context = ssl.create_default_context()
-    with smtplib.SMTP(SMTP_SERVER, 587, timeout=SMTP_TIMEOUT) as server:
+def _send_via_starttls(port: int, msg):
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP(SMTP_SERVER, port, timeout=SMTP_TIMEOUT) as server:
         server.ehlo()
-        server.starttls(context=context)
+        server.starttls(context=ctx)
         server.ehlo()
         server.login(SMTP_USER, SMTP_PASS)
         server.send_message(msg)
 
 
-def _send_via_465_smtps(msg):
-    """Pokušaj preko 465 (SMTPS/SSL wrap)."""
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(SMTP_SERVER, 465, context=context, timeout=SMTP_TIMEOUT) as server:
+def _send_via_smtps_465(msg):
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP_SSL(SMTP_SERVER, 465, context=ctx, timeout=SMTP_TIMEOUT) as server:
         server.login(SMTP_USER, SMTP_PASS)
         server.send_message(msg)
 
 
 def send_email_with_fallback(to_addr: str, subject: str, body: str, reply_to: str = None):
-    """Pokušaj slanje na više portova sa kratkim retry-jem."""
+    """Pokušaj slanje kroz više portova, s kratkim retry-jem."""
     msg = MIMEMultipart()
     msg["From"] = f"StranicaX Kontakt <{SMTP_USER}>"
     msg["To"] = to_addr
@@ -83,19 +82,10 @@ def send_email_with_fallback(to_addr: str, subject: str, body: str, reply_to: st
     for attempt in range(1, SMTP_RETRIES + 1):
         for port in SMTP_PORTS:
             try:
-                if port == 587:
-                    _send_via_587_starttls(msg)
-                elif port == 465:
-                    _send_via_465_smtps(msg)
+                if port == 465:
+                    _send_via_smtps_465(msg)
                 else:
-                    # Ako dodaš drugi port, tretiraj ga kao STARTTLS
-                    context = ssl.create_default_context()
-                    with smtplib.SMTP(SMTP_SERVER, port, timeout=SMTP_TIMEOUT) as server:
-                        server.ehlo()
-                        server.starttls(context=context)
-                        server.ehlo()
-                        server.login(SMTP_USER, SMTP_PASS)
-                        server.send_message(msg)
+                    _send_via_starttls(port, msg)
                 return  # uspeh
             except (socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as e:
                 last_err = f"timeout/connect on port {port}: {e}"
@@ -125,13 +115,20 @@ def queue_email(job_id: str, to_addr: str, subject: str, body: str, reply_to: st
 
 # ------------------------ SUBMISSION API ------------------------
 
-def save_submission(data, client_ip):
+def _load_all():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            all_data = json.load(f)
-    else:
-        all_data = []
+            return json.load(f)
+    return []
 
+
+def _save_all(all_data):
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(all_data, f, ensure_ascii=False, indent=2)
+
+
+def save_submission(data, client_ip):
+    all_data = _load_all()
     submission = {
         "id": str(uuid.uuid4()),
         "timestamp": datetime.utcnow().isoformat(),
@@ -141,31 +138,28 @@ def save_submission(data, client_ip):
         "result_url": None
     }
     all_data.append(submission)
-
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(all_data, f, ensure_ascii=False, indent=2)
-
+    _save_all(all_data)
     return submission["id"]
 
 
 def mark_submission_processed(submission_id, result_url=None):
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            all_data = json.load(f)
-        for submission in all_data:
-            if submission["id"] == submission_id:
-                submission["processed"] = True
-                if result_url:
-                    submission["result_url"] = result_url
-                break
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(all_data, f, ensure_ascii=False, indent=2)
-        return True
-    return False
+    all_data = _load_all()
+    found = False
+    for s in all_data:
+        if s["id"] == submission_id:
+            s["processed"] = True
+            if result_url:
+                s["result_url"] = result_url
+            found = True
+            break
+    if found:
+        _save_all(all_data)
+    return found
 
 
 @app.route('/submit-form', methods=['POST'])
 def receive_form():
+    """Prima podatke sa fronta, kreira submission_id i snima u submissions.json."""
     try:
         data = request.json
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
@@ -177,12 +171,7 @@ def receive_form():
         REQUESTS[client_ip] += 1
 
         submission_id = save_submission(data, client_ip)
-
-        return jsonify({
-            "status": "success",
-            "submission_id": submission_id,
-            "ip": client_ip
-        })
+        return jsonify({"status": "success", "submission_id": submission_id, "ip": client_ip})
     except Exception as e:
         print("Greška (submit-form):", str(e))
         return jsonify({"status": "error", "message": "Neočekivana greška na serveru"}), 500
@@ -190,14 +179,11 @@ def receive_form():
 
 @app.route('/get-new-submissions', methods=['GET'])
 def get_new_submissions():
+    """Vraća sve NEobrađene zahtjeve (čita ih tvoj worker)."""
     try:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                all_data = json.load(f)
-            new_submissions = [s for s in all_data if not s.get("processed", False)]
-            return jsonify({"status": "success", "submissions": new_submissions})
-        else:
-            return jsonify({"status": "success", "submissions": []})
+        all_data = _load_all()
+        new_submissions = [s for s in all_data if not s.get("processed", False)]
+        return jsonify({"status": "success", "submissions": new_submissions})
     except Exception as e:
         print("Greška (get-new-submissions):", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -205,16 +191,35 @@ def get_new_submissions():
 
 @app.route('/mark-processed/<submission_id>', methods=['POST'])
 def mark_processed(submission_id):
+    """Pozove je worker nakon što generiše sajt; setuje processed=True i (opciono) result_url."""
     try:
         data = request.json or {}
         result_url = data.get("result_url")
-        success = mark_submission_processed(submission_id, result_url)
-        if success:
+        if mark_submission_processed(submission_id, result_url):
             return jsonify({"status": "success", "message": f"Submission {submission_id} marked as processed"})
         else:
             return jsonify({"status": "error", "message": "Submission not found"}), 404
     except Exception as e:
         print("Greška (mark-processed):", str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/status/<submission_id>', methods=['GET'])
+def status(submission_id):
+    """Frontend polling: vrati processed/result_url za dati submission_id."""
+    try:
+        all_data = _load_all()
+        for s in all_data:
+            if s["id"] == submission_id:
+                return jsonify({
+                    "status": "success",
+                    "submission_id": submission_id,
+                    "processed": bool(s.get("processed", False)),
+                    "result_url": s.get("result_url")
+                })
+        return jsonify({"status": "error", "message": "Submission not found"}), 404
+    except Exception as e:
+        print("Greška (status):", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -273,7 +278,6 @@ def email_status(job_id):
 # ------------------------ HEALTH ------------------------
 
 def _probe_port(port: int) -> dict:
-    # 587 test STARTTLS handshake, 465 test SSL connect
     try:
         if port == 465:
             ctx = ssl.create_default_context()
