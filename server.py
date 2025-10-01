@@ -17,11 +17,12 @@ RATE_LIMIT = 5  # max zahtjeva po IP
 REQUESTS = {}   # memorijski brojač
 
 # --- SMTP konfiguracija ---
-SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix direktno
-SMTP_PORT = 587                      # 587 za TLS, 465 za SSL
+SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix na VPS-u
+SMTP_PORT = 587                      # 587 za TLS (465 za SSL)
 SMTP_USER = "kontakt@stranicax.com"  # mejl nalog koji si kreirao
 SMTP_PASS = "TVOJA_LOZINKA"          # lozinka tog naloga
 TARGET_EMAIL = "vlasnik@stranicax.com"  # gde vlasnik prima poruke sa sajta
+
 
 # Kreiraj folder za promptove ako ne postoji
 if not os.path.exists(PROMPT_DIR):
