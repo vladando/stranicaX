@@ -7,6 +7,7 @@ from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import re
 
 app = Flask(__name__)
 CORS(app)  # Dozvoljava frontend sa svih domena
@@ -18,10 +19,12 @@ REQUESTS = {}   # memorijski brojač
 
 # --- SMTP konfiguracija ---
 SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix na VPS-u
-SMTP_PORT = 587                      # 587 za TLS, 465 za SSL
+SMTP_PORT = 587                      # 587 za TLS, 465 za SSL (wrapper)
 SMTP_USER = "kontakt@stranicax.com"  # mejl nalog koji si kreirao
-SMTP_PASS = "retriver"          # lozinka tog naloga
-TARGET_EMAIL = "od.ergon@gmail.com"  # gde vlasnik prima poruke sa sajta
+SMTP_PASS = "TVOJA_LOZINKA"          # lozinka tog naloga
+TARGET_EMAIL = "vlasnik@stranicax.com"  # default fallback ako ownerEmail nije poslat/ispravan
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # Kreiraj folder za promptove ako ne postoji
@@ -98,7 +101,7 @@ def receive_form():
 
 @app.route('/get-new-submissions', methods=['GET'])
 def get_new_submissions():
-    """Vraća sve neobrađene zahtjeve (koristi Selenium worker)."""
+    """Vraća sve neobrađene zahtjeve (koristi Selenium/worker)."""
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
@@ -128,48 +131,41 @@ def mark_processed(submission_id):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route('/status/<submission_id>', methods=['GET'])
-def get_status(submission_id):
-    """Frontend provjerava status obrade i eventualni URL."""
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            all_data = json.load(f)
-        for submission in all_data:
-            if submission["id"] == submission_id:
-                return jsonify({
-                    "status": "success",
-                    "submission_id": submission_id,
-                    "processed": submission.get("processed", False),
-                    "result_url": submission.get("result_url", None)
-                })
-    return jsonify({"status": "error", "message": "Submission not found"}), 404
-
-
-# --- NOVO: slanje mejlova ---
+# --- Kontakt forma: prima JSON ili form-data i šalje mejl vlasniku sajta ---
 @app.route('/send-email', methods=['POST'])
 def send_email():
-    """Prima podatke iz kontakt forme i šalje email vlasniku sajta."""
+    """Prima podatke iz kontakt forme i šalje email vlasniku sajta (dinamički ownerEmail ili fallback)."""
     try:
-        data = request.json
-        sender_name = data.get("name")
-        sender_email = data.get("email")
-        message_text = data.get("message")
+        # podržava i JSON i klasične HTML forme
+        data = request.get_json(silent=True) if request.is_json else None
+        if data is None:
+            data = request.form.to_dict()
+
+        sender_name = (data.get("name") or "").strip()
+        sender_email = (data.get("email") or "").strip()
+        message_text = (data.get("message") or "").strip()
+
+        # vlasnikov email dinamički iz forme (skriveno polje koje DeepSite ubacuje), fallback na TARGET_EMAIL
+        owner_email = (data.get("ownerEmail") or "").strip()
+        to_addr = owner_email if EMAIL_RE.match(owner_email) else TARGET_EMAIL
+
+        if not sender_name or not EMAIL_RE.match(sender_email) or not message_text:
+            return jsonify({"status": "error", "message": "Neispravna ili prazna polja (name/email/message)."}), 400
 
         msg = MIMEMultipart()
         msg["From"] = f"StranicaX Kontakt <{SMTP_USER}>"
-        msg["To"] = TARGET_EMAIL
+        msg["To"] = to_addr
         msg["Subject"] = f"Nova poruka sa sajta od {sender_name}"
         msg.add_header("Reply-To", sender_email)
 
-        body = f"""
-        Nova poruka preko kontakt forme:
+        body = f"""Nova poruka preko kontakt forme:
 
-        Ime: {sender_name}
-        Email: {sender_email}
+Ime: {sender_name}
+Email: {sender_email}
 
-        Poruka:
-        {message_text}
-        """
+Poruka:
+{message_text}
+"""
         msg.attach(MIMEText(body, "plain"))
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
@@ -190,4 +186,6 @@ def health_check():
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Render koristi PORT var iz env-a; lokalno 5000
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=True)
