@@ -26,7 +26,7 @@ SMTP_SERVER = os.getenv("SMTP_SERVER", "mail.stranicax.com")
 # Poredak pokušaja (587 STARTTLS → 465 SMTPS); možeš promeniti kroz env, npr. "465,587"
 SMTP_PORTS = [int(p.strip()) for p in os.getenv("SMTP_PORTS", "587,465").split(",") if p.strip()]
 SMTP_USER = os.getenv("SMTP_USER", "kontakt@stranicax.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "TVOJA_LOZINKA")
+SMTP_PASS = os.getenv("SMTP_PASS", "retriver")
 TARGET_EMAIL = os.getenv("TARGET_EMAIL", "vlasnik@stranicax.com")  # fallback ako ownerEmail nije poslat/ispravan
 
 SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "12"))  # kratak da ne blokira workere
