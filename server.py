@@ -21,7 +21,7 @@ SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix na 
 SMTP_PORT = 587                      # 587 za TLS, 465 za SSL
 SMTP_USER = "kontakt@stranicax.com"  # mejl nalog koji si kreirao
 SMTP_PASS = "retriver"          # lozinka tog naloga
-TARGET_EMAIL = "vlasnik@stranicax.com"  # gde vlasnik prima poruke sa sajta
+TARGET_EMAIL = "od.ergon@gmail.com"  # gde vlasnik prima poruke sa sajta
 
 
 # Kreiraj folder za promptove ako ne postoji
