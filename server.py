@@ -4,6 +4,9 @@ import json
 import os
 import uuid
 from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 CORS(app)  # Dozvoljava frontend sa svih domena
@@ -12,6 +15,13 @@ DATA_FILE = 'submissions.json'
 PROMPT_DIR = 'prompts'
 RATE_LIMIT = 5  # max zahtjeva po IP
 REQUESTS = {}   # memorijski brojač
+
+# --- SMTP konfiguracija ---
+SMTP_SERVER = "mail.stranicax.com"   # ili "localhost" ako koristiš Postfix direktno
+SMTP_PORT = 587                      # 587 za TLS, 465 za SSL
+SMTP_USER = "kontakt@stranicax.com"  # mejl nalog koji si kreirao
+SMTP_PASS = "TVOJA_LOZINKA"          # lozinka tog naloga
+TARGET_EMAIL = "vlasnik@stranicax.com"  # gde vlasnik prima poruke sa sajta
 
 # Kreiraj folder za promptove ako ne postoji
 if not os.path.exists(PROMPT_DIR):
@@ -132,6 +142,45 @@ def get_status(submission_id):
                     "result_url": submission.get("result_url", None)
                 })
     return jsonify({"status": "error", "message": "Submission not found"}), 404
+
+
+# --- NOVO: slanje mejlova ---
+@app.route('/send-email', methods=['POST'])
+def send_email():
+    """Prima podatke iz kontakt forme i šalje email vlasniku sajta."""
+    try:
+        data = request.json
+        sender_name = data.get("name")
+        sender_email = data.get("email")
+        message_text = data.get("message")
+
+        msg = MIMEMultipart()
+        msg["From"] = f"StranicaX Kontakt <{SMTP_USER}>"
+        msg["To"] = TARGET_EMAIL
+        msg["Subject"] = f"Nova poruka sa sajta od {sender_name}"
+        msg.add_header("Reply-To", sender_email)
+
+        body = f"""
+        Nova poruka preko kontakt forme:
+
+        Ime: {sender_name}
+        Email: {sender_email}
+
+        Poruka:
+        {message_text}
+        """
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+        return jsonify({"status": "success", "message": "Email uspešno poslat!"}), 200
+
+    except Exception as e:
+        print("Greška pri slanju emaila:", str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route('/', methods=['GET'])
