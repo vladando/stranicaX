@@ -9,6 +9,7 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate, make_msgid
 from concurrent.futures import ThreadPoolExecutor
 import socket
 import time
@@ -16,23 +17,26 @@ import time
 app = Flask(__name__)
 CORS(app)
 
-DATA_FILE = 'submissions.json'
-PROMPT_DIR = 'prompts'
+# ------------------------ PERSISTENT STORAGE ------------------------
+# Ako na Renderu dodaš Disk montiran na /data, fajl će preživeti redeploy-e.
+DATA_FILE = os.getenv("DATA_FILE", "/data/submissions.json")
+PROMPT_DIR = os.getenv("PROMPT_DIR", "prompts")
+
 RATE_LIMIT = 5
 REQUESTS = {}
 
-# --- SMTP CONFIG (postavi na Renderu u Environment Variables) ---
+# ------------------------ SMTP CONFIG ------------------------
+# Postavi u Render → Settings → Environment Variables
 SMTP_SERVER = os.getenv("SMTP_SERVER", "mail.stranicax.com")
-# Redosled pokušaja (možeš postaviti SMTP_PORTS u Render env, npr. "2525,587,465")
+# Redosled pokušaja; preporučeno: 2525 prvi (kod tebe radi), zatim 587/465
 SMTP_PORTS = [int(p.strip()) for p in os.getenv("SMTP_PORTS", "2525,587,465").split(",") if p.strip()]
 SMTP_USER = os.getenv("SMTP_USER", "kontakt@stranicax.com")
 SMTP_PASS = os.getenv("SMTP_PASS", "TVOJA_LOZINKA")
-TARGET_EMAIL = os.getenv("TARGET_EMAIL", "vlasnik@stranicax.com")  # fallback kad ownerEmail nije poslat/validan
+TARGET_EMAIL = os.getenv("TARGET_EMAIL", "vlasnik@stranicax.com")  # ako ownerEmail nije poslat/validan
 
 SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "12"))
 SMTP_RETRIES = int(os.getenv("SMTP_RETRIES", "2"))
 RETRY_SLEEP = float(os.getenv("SMTP_RETRY_SLEEP", "0.5"))
-
 EMAIL_WORKERS = int(os.getenv("EMAIL_WORKERS", "2"))
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -42,7 +46,13 @@ MAX_MSG_LEN = 8000
 
 EMAIL_JOBS = {}
 
+# ------------------------ INIT FS ------------------------
+os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f)
 os.makedirs(PROMPT_DIR, exist_ok=True)
+
 executor = ThreadPoolExecutor(max_workers=EMAIL_WORKERS)
 
 
@@ -69,11 +79,17 @@ def _send_via_smtps_465(msg):
 
 
 def send_email_with_fallback(to_addr: str, subject: str, body: str, reply_to: str = None):
-    """Pokušaj slanje kroz više portova, s kratkim retry-jem."""
+    """
+    Pokušaj slanje kroz više portova, s kratkim retry-jem.
+    Dodata 'Date' i 'Message-ID' zaglavlja radi deliverability-ja.
+    """
     msg = MIMEMultipart()
     msg["From"] = f"StranicaX Kontakt <{SMTP_USER}>"
     msg["To"] = to_addr
     msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
+    # Forsira domen u Message-ID radi boljeg sklada sa DKIM/DMARC
+    msg["Message-ID"] = make_msgid(domain="stranicax.com")
     if reply_to:
         msg.add_header("Reply-To", reply_to)
     msg.attach(MIMEText(body, "plain"))
@@ -116,15 +132,22 @@ def queue_email(job_id: str, to_addr: str, subject: str, body: str, reply_to: st
 # ------------------------ SUBMISSION API ------------------------
 
 def _load_all():
-    if os.path.exists(DATA_FILE):
+    try:
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    return []
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        print(f"[LOAD_ALL] error: {e}")
+        return []
 
 
 def _save_all(all_data):
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(all_data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(all_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[SAVE_ALL] error: {e}")
 
 
 def save_submission(data, client_ip):
@@ -229,7 +252,7 @@ def status(submission_id):
 def send_email():
     """
     Prima podatke iz kontakt forme i queue-uje slanje emaila u pozadini.
-    Podržava JSON i form-data. Odmah vraća success (ne blokira HTTP).
+    Podržava JSON i x-www-form-urlencoded. Odmah vraća success (ne blokira HTTP).
     """
     try:
         data = request.get_json(silent=True) if request.is_json else None
@@ -293,6 +316,7 @@ def _probe_port(port: int) -> dict:
             return {"port": port, "ok": True, "mode": "starttls"}
     except Exception as e:
         return {"port": port, "ok": False, "error": str(e)}
+
 
 @app.route('/smtp-health', methods=['GET'])
 def smtp_health():
